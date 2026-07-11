@@ -1,0 +1,5 @@
+# Lead lifecycle: upsert, always-resync, sticky qualification
+
+Extraction re-runs after every assistant turn, so a Lead's score can move in either direction as the conversation continues. We decided: (1) a Lead is one upserted row per `conversation_id`, not an append-only history or a write-once event; (2) every upsert of an already-qualified Lead re-syncs its CRM (Google Sheets) row via find-or-append, so the CRM always reflects current state; (3) qualification is a one-way gate — once a Conversation's score crosses 60 and creates a Lead row, that row is never deleted or un-synced even if a later recomputed score dips back below 60.
+
+We chose this over a fully "live" model (where a score dip un-qualifies and removes the CRM row) because a sales rep would rather see "this person showed real interest at some point" than have leads silently vanish from the pipeline — losing a lead that expressed interest is worse than keeping a stale one. Considered alternatives: append-only history (rejected — no need for a full audit trail in a demo), write-once (rejected — cheaper on free-tier API calls, but stops improving captured fields like a corrected phone number).

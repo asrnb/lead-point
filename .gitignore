@@ -37,6 +37,13 @@ yarn-error.log*
 # vercel
 .vercel
 
+# local AI coding assistant tooling — not part of the shipped project
+/.claude
+/.agents
+/skills-lock.json
+/CLAUDE.md
+/AGENTS.md
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

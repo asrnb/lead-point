@@ -26,7 +26,7 @@ demo, clean code a hiring manager can read, and a README that reads like a case 
 | Framework | Next.js 16 App Router + TypeScript | Deploy on Vercel free tier |
 | Styling | Tailwind CSS | |
 | DB + vectors | Supabase (Postgres + pgvector) | Free tier, RLS on |
-| LLM | Google Gemini API — `gemini-2.5-flash` | Free tier, no card required |
+| LLM | Google Gemini API — `gemini-flash-latest` | Free tier, no card required. Uses the "latest" alias, not a dated model, since dated models get retired for new API keys (hit this during Phase 2 — `gemini-2.5-flash` was already blocked) and the spec explicitly wants nothing that rots. |
 | Embeddings | Gemini `gemini-embedding-001` | Free tier |
 | Booking | Cal.com free plan, embedded widget | Real bookings in demo |
 | CRM sink | Google Sheets via service account | Behind a `CrmAdapter` interface |
@@ -113,7 +113,9 @@ Enable RLS; server routes use service role key; nothing sensitive client-side.
 1. **Phase 1 — Scaffold:** Next.js app, Supabase schema + migrations, seed script,
 marketing page with chat UI shell (no LLM yet). Verify seed embeds run.
 2. **Phase 2 — RAG chat:** `/api/chat` streaming with Gemini + pgvector retrieval.
-Test with 10 sample questions; log retrieved chunks in dev.
+Test with 10 sample questions; log retrieved chunks in dev. ✅ Done — verified
+end-to-end (retrieval, streaming, and conversation persistence all confirmed
+against live Supabase + Gemini).
 3. **Phase 3 — Qualification + CRM:** extraction call, scoring, SheetsAdapter,
 leads table + admin dashboard.
 4. **Phase 4 — Booking + polish:** Cal.com embed trigger, empty/error states,

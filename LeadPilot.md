@@ -117,7 +117,9 @@ Test with 10 sample questions; log retrieved chunks in dev. ✅ Done — verifie
 end-to-end (retrieval, streaming, and conversation persistence all confirmed
 against live Supabase + Gemini).
 3. **Phase 3 — Qualification + CRM:** extraction call, scoring, SheetsAdapter,
-leads table + admin dashboard.
+leads table + admin dashboard. ✅ Done — verified end-to-end (structured
+extraction, deterministic scoring, upsert-and-resync CRM, password-gated
+admin dashboard with stats + transcript links, all against live services).
 4. **Phase 4 — Booking + polish:** Cal.com embed trigger, empty/error states,
 mobile layout, rate limiting on chat endpoint (Upstash Redis free tier).
 5. **Phase 5 — Case study packaging:** README with problem → solution → architecture

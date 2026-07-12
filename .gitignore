@@ -34,6 +34,10 @@ yarn-error.log*
 .env*
 !.env.example
 
+# service account keys / other credential files
+*.json.key
+leadpilot-*.json
+
 # vercel
 .vercel
 

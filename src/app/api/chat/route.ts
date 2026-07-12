@@ -2,6 +2,8 @@ import { streamText, type ModelMessage } from "ai";
 import { buildContextBlock, retrieveContext } from "@/lib/rag";
 import { buildSystemPrompt, getLlmAdapter } from "@/lib/llm";
 import { supabaseAdmin } from "@/lib/supabase";
+import { qualifyConversation, QUALIFIED_THRESHOLD } from "@/lib/qualify";
+import { getCrmAdapter } from "@/lib/crm";
 
 export const runtime = "nodejs";
 
@@ -36,10 +38,9 @@ export async function POST(req: Request) {
     system: buildSystemPrompt(buildContextBlock(chunks)),
     messages: messages as ModelMessage[],
     onFinish: async ({ text }) => {
-      await persistConversation(sessionId, [
-        ...messages,
-        { role: "assistant", content: text },
-      ]);
+      const fullMessages = [...messages, { role: "assistant" as const, content: text }];
+      const conversation = await persistConversation(sessionId, fullMessages);
+      if (conversation) await qualifyAndSync(conversation.id, fullMessages);
     },
   });
 
@@ -47,8 +48,67 @@ export async function POST(req: Request) {
 }
 
 async function persistConversation(sessionId: string, messages: ChatMessage[]) {
-  const { error } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from("conversations")
-    .upsert({ session_id: sessionId, messages }, { onConflict: "session_id" });
-  if (error) console.error("Failed to persist conversation:", error);
+    .upsert({ session_id: sessionId, messages }, { onConflict: "session_id" })
+    .select()
+    .single();
+  if (error) {
+    console.error("Failed to persist conversation:", error);
+    return null;
+  }
+  return data;
+}
+
+// Runs every turn (see docs/adr/0001-lead-lifecycle.md): a Lead is upserted
+// keyed by conversation_id, and once it exists it keeps getting updated and
+// re-synced even if a later recomputed score dips back under the threshold.
+async function qualifyAndSync(conversationId: string, messages: ChatMessage[]) {
+  const { data: existingLead } = await supabaseAdmin
+    .from("leads")
+    .select("id")
+    .eq("conversation_id", conversationId)
+    .maybeSingle();
+
+  const result = await qualifyConversation(messages);
+  const isQualified = result.score >= QUALIFIED_THRESHOLD;
+  if (!existingLead && !isQualified) return;
+
+  const { data: lead, error } = await supabaseAdmin
+    .from("leads")
+    .upsert(
+      {
+        conversation_id: conversationId,
+        name: result.name,
+        contact: result.contact,
+        service: result.service,
+        urgency: result.urgency,
+        insurance: result.insurance,
+        score: result.score,
+      },
+      { onConflict: "conversation_id" },
+    )
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Failed to upsert lead:", error);
+    return;
+  }
+
+  try {
+    await getCrmAdapter().sync({
+      id: lead.id,
+      name: lead.name,
+      contact: lead.contact,
+      service: lead.service,
+      urgency: lead.urgency,
+      insurance: lead.insurance,
+      score: lead.score,
+      createdAt: lead.created_at,
+    });
+    await supabaseAdmin.from("leads").update({ synced_to_crm: true }).eq("id", lead.id);
+  } catch (err) {
+    console.error("Failed to sync lead to CRM:", err);
+  }
 }

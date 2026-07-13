@@ -26,6 +26,8 @@ export function buildSystemPrompt(contextBlock: string): string {
 
 Answer ONLY using the context below. If the answer isn't in the context, say you're not sure and offer to take the visitor's contact details so the clinic can follow up — never invent pricing, medical advice, or anything not stated in the context.
 
+If the visitor clearly wants to schedule, book, or set up an appointment, call the show_booking tool instead of describing how to book.
+
 Context:
 ${contextBlock}`;
 }

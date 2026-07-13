@@ -1,18 +1,27 @@
-import { streamText, type ModelMessage } from "ai";
+import { convertToModelMessages, streamText, type UIMessage } from "ai";
 import { buildContextBlock, retrieveContext } from "@/lib/rag";
 import { buildSystemPrompt, getLlmAdapter } from "@/lib/llm";
+import { chatTools } from "@/lib/tools";
 import { supabaseAdmin } from "@/lib/supabase";
 import { qualifyConversation, QUALIFIED_THRESHOLD } from "@/lib/qualify";
 import { getCrmAdapter } from "@/lib/crm";
+import { chatRateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
+function extractText(message: UIMessage): string {
+  return message.parts
+    .filter((part) => part.type === "text")
+    .map((part) => (part as { text: string }).text)
+    .join("");
+}
+
 export async function POST(req: Request) {
   const { sessionId, messages } = (await req.json()) as {
     sessionId: string;
-    messages: ChatMessage[];
+    messages: UIMessage[];
   };
 
   const lastUserMessage = [...messages].reverse().find((m) => m.role === "user");
@@ -20,10 +29,17 @@ export async function POST(req: Request) {
     return new Response("No user message in request", { status: 400 });
   }
 
-  const chunks = await retrieveContext(lastUserMessage.content);
+  const { success } = await chatRateLimit.limit(sessionId);
+  if (!success) {
+    return new Response("Too many messages. Please wait a bit and try again.", {
+      status: 429,
+    });
+  }
+
+  const chunks = await retrieveContext(extractText(lastUserMessage));
 
   if (process.env.NODE_ENV !== "production") {
-    console.log(`[rag] query: "${lastUserMessage.content}"`);
+    console.log(`[rag] query: "${extractText(lastUserMessage)}"`);
     for (const [i, chunk] of chunks.entries()) {
       console.log(
         `[rag]   #${i + 1} similarity=${chunk.similarity.toFixed(3)} "${chunk.content.slice(0, 80).replace(/\n/g, " ")}..."`,
@@ -36,15 +52,22 @@ export async function POST(req: Request) {
   const result = streamText({
     model,
     system: buildSystemPrompt(buildContextBlock(chunks)),
-    messages: messages as ModelMessage[],
+    messages: await convertToModelMessages(messages),
+    tools: chatTools,
     onFinish: async ({ text }) => {
-      const fullMessages = [...messages, { role: "assistant" as const, content: text }];
-      const conversation = await persistConversation(sessionId, fullMessages);
-      if (conversation) await qualifyAndSync(conversation.id, fullMessages);
+      const plainMessages: ChatMessage[] = [
+        ...messages.map((m) => ({
+          role: m.role as "user" | "assistant",
+          content: extractText(m),
+        })),
+        { role: "assistant" as const, content: text },
+      ];
+      const conversation = await persistConversation(sessionId, plainMessages);
+      if (conversation) await qualifyAndSync(conversation.id, plainMessages);
     },
   });
 
-  return result.toTextStreamResponse();
+  return result.toUIMessageStreamResponse();
 }
 
 async function persistConversation(sessionId: string, messages: ChatMessage[]) {

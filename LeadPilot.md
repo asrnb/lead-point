@@ -121,7 +121,11 @@ leads table + admin dashboard. ✅ Done — verified end-to-end (structured
 extraction, deterministic scoring, upsert-and-resync CRM, password-gated
 admin dashboard with stats + transcript links, all against live services).
 4. **Phase 4 — Booking + polish:** Cal.com embed trigger, empty/error states,
-mobile layout, rate limiting on chat endpoint (Upstash Redis free tier).
+mobile layout, rate limiting on chat endpoint (Upstash Redis free tier). ✅
+Done — migrated to the AI SDK's `useChat`/UIMessage streaming so the
+`show_booking` tool call is a distinct stream event the client renders as an
+iframe; rate limit verified (20/10min per session, confirmed 429 on the
+21st request); mobile-responsive widget sizing.
 5. **Phase 5 — Case study packaging:** README with problem → solution → architecture
 diagram → results; record 2–3 min Loom; add screenshots.
 

@@ -1,18 +1,11 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
-
-type ChatMessage = {
-  role: "user" | "assistant";
-  content: string;
-};
+import { useChat } from "@ai-sdk/react";
+import { DefaultChatTransport } from "ai";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 const SESSION_STORAGE_KEY = "leadpilot_session_id";
-
-const INITIAL_MESSAGE: ChatMessage = {
-  role: "assistant",
-  content: "Hi! I'm the Riverside Dental Clinic assistant. Ask me anything.",
-};
+const CAL_COM_LINK = process.env.NEXT_PUBLIC_CAL_COM_LINK;
 
 function getOrCreateSessionId(): string {
   const existing = localStorage.getItem(SESSION_STORAGE_KEY);
@@ -25,61 +18,36 @@ function getOrCreateSessionId(): string {
 export function ChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
   const [draft, setDraft] = useState("");
-  const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MESSAGE]);
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    setSessionId(getOrCreateSessionId());
+    sessionIdRef.current = getOrCreateSessionId();
   }, []);
 
-  async function handleSubmit(event: FormEvent) {
+  const transport = useMemo(
+    () =>
+      new DefaultChatTransport({
+        api: "/api/chat",
+        body: () => ({ sessionId: sessionIdRef.current }),
+      }),
+    [],
+  );
+
+  const { messages, sendMessage, status, error } = useChat({ transport });
+  const isBusy = status === "submitted" || status === "streaming";
+
+  function handleSubmit(event: FormEvent) {
     event.preventDefault();
     const trimmed = draft.trim();
-    if (!trimmed || isStreaming || !sessionId) return;
-
-    const nextMessages = [...messages, { role: "user" as const, content: trimmed }];
-    setMessages([...nextMessages, { role: "assistant", content: "" }]);
+    if (!trimmed || isBusy) return;
+    sendMessage({ text: trimmed });
     setDraft("");
-    setIsStreaming(true);
-
-    try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, messages: nextMessages }),
-      });
-      if (!response.ok || !response.body) {
-        throw new Error(`Chat request failed: ${response.status}`);
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let assistantText = "";
-
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        assistantText += decoder.decode(value, { stream: true });
-        setMessages([...nextMessages, { role: "assistant", content: assistantText }]);
-      }
-    } catch {
-      setMessages([
-        ...nextMessages,
-        {
-          role: "assistant",
-          content: "Sorry, something went wrong. Please try again in a moment.",
-        },
-      ]);
-    } finally {
-      setIsStreaming(false);
-    }
   }
 
   return (
     <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
       {isOpen && (
-        <div className="flex h-[28rem] w-[22rem] flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-xl">
+        <div className="flex h-[min(28rem,80vh)] w-[min(22rem,calc(100vw-3rem))] flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-xl">
           <div className="flex items-center justify-between border-b border-border bg-accent px-4 py-3">
             <span className="text-sm font-medium text-accent-foreground">
               Riverside Dental Clinic
@@ -95,18 +63,56 @@ export function ChatWidget() {
           </div>
 
           <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
-            {messages.map((message, index) => (
+            <div className="max-w-[85%] whitespace-pre-wrap rounded-xl bg-background px-3 py-2 text-sm text-foreground">
+              Hi! I&apos;m the Riverside Dental Clinic assistant. Ask me anything.
+            </div>
+
+            {messages.map((message) => (
               <div
-                key={index}
+                key={message.id}
                 className={`max-w-[85%] whitespace-pre-wrap rounded-xl px-3 py-2 text-sm ${
                   message.role === "user"
                     ? "ml-auto bg-accent text-accent-foreground"
                     : "bg-background text-foreground"
                 }`}
               >
-                {message.content || (isStreaming && index === messages.length - 1 ? "…" : "")}
+                {message.parts.map((part, i) => {
+                  if (part.type === "text") return <span key={i}>{part.text}</span>;
+                  if (part.type === "tool-show_booking") {
+                    return (
+                      <div
+                        key={i}
+                        className="mt-2 overflow-hidden rounded-lg border border-border bg-surface"
+                      >
+                        {CAL_COM_LINK ? (
+                          <iframe
+                            src={CAL_COM_LINK}
+                            className="h-96 w-full"
+                            title="Book an appointment"
+                          />
+                        ) : (
+                          <p className="p-2 text-xs text-foreground/60">
+                            Booking widget isn&apos;t configured yet.
+                          </p>
+                        )}
+                      </div>
+                    );
+                  }
+                  return null;
+                })}
               </div>
             ))}
+
+            {status === "submitted" && (
+              <div className="max-w-[85%] rounded-xl bg-background px-3 py-2 text-sm text-foreground">
+                …
+              </div>
+            )}
+            {status === "error" && (
+              <div className="max-w-[85%] rounded-xl bg-background px-3 py-2 text-sm text-red-600">
+                {error?.message || "Sorry, something went wrong. Please try again."}
+              </div>
+            )}
           </div>
 
           <form
@@ -117,12 +123,12 @@ export function ChatWidget() {
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               placeholder="Ask about services, pricing, hours..."
-              disabled={isStreaming}
+              disabled={isBusy}
               className="flex-1 rounded-full border border-border bg-background px-3 py-2 text-sm outline-none focus:border-accent disabled:opacity-60"
             />
             <button
               type="submit"
-              disabled={isStreaming}
+              disabled={isBusy}
               className="rounded-full bg-accent px-4 py-2 text-sm font-medium text-accent-foreground hover:opacity-90 disabled:opacity-60"
             >
               Send

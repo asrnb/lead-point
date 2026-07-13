@@ -18,11 +18,21 @@ function getOrCreateSessionId(): string {
 export function ChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
   const [draft, setDraft] = useState("");
+  const [showHint, setShowHint] = useState(false);
   const sessionIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     sessionIdRef.current = getOrCreateSessionId();
   }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setShowHint(true), 2500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) setShowHint(false);
+  }, [isOpen]);
 
   const transport = useMemo(
     () =>
@@ -137,13 +147,41 @@ export function ChatWidget() {
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={() => setIsOpen((open) => !open)}
-        className="rounded-full bg-accent px-5 py-3 text-sm font-medium text-accent-foreground shadow-lg hover:opacity-90"
-      >
-        {isOpen ? "Close chat" : "Chat with us"}
-      </button>
+      {!isOpen && showHint && (
+        <div className="relative max-w-60 animate-[fade-slide-up_0.4s_ease-out] rounded-2xl rounded-br-sm border border-border bg-surface px-4 py-3 text-sm text-foreground shadow-lg">
+          <button
+            type="button"
+            onClick={() => setShowHint(false)}
+            aria-label="Dismiss"
+            className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-foreground/10 text-xs text-foreground/60 hover:bg-foreground/20"
+          >
+            ✕
+          </button>
+          👋 Have a question about services, pricing, or booking? Ask me anything!
+        </div>
+      )}
+
+      <div className="relative">
+        {!isOpen && (
+          <span className="absolute inset-0 -z-10 animate-ping rounded-full bg-accent opacity-40" />
+        )}
+        <button
+          type="button"
+          onClick={() => setIsOpen((open) => !open)}
+          className="flex items-center gap-2 rounded-full bg-accent px-6 py-4 text-sm font-semibold text-accent-foreground shadow-lg transition-transform hover:scale-105 hover:opacity-90"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            className="h-5 w-5"
+            aria-hidden="true"
+          >
+            <path d="M4 4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h3v3.5a.5.5 0 0 0 .8.4L13 18h7a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H4Z" />
+          </svg>
+          {isOpen ? "Close chat" : "Chat with us"}
+        </button>
+      </div>
     </div>
   );
 }

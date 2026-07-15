@@ -1,4 +1,5 @@
 import { convertToModelMessages, streamText, type UIMessage } from "ai";
+import { after } from "next/server";
 import { buildContextBlock, retrieveContext } from "@/lib/rag";
 import { buildSystemPrompt, getLlmAdapter } from "@/lib/llm";
 import { chatTools } from "@/lib/tools";
@@ -54,7 +55,7 @@ export async function POST(req: Request) {
     system: buildSystemPrompt(buildContextBlock(chunks)),
     messages: await convertToModelMessages(messages),
     tools: chatTools,
-    onFinish: async ({ text }) => {
+    onFinish: ({ text }) => {
       const plainMessages: ChatMessage[] = [
         ...messages.map((m) => ({
           role: m.role as "user" | "assistant",
@@ -62,8 +63,15 @@ export async function POST(req: Request) {
         })),
         { role: "assistant" as const, content: text },
       ];
-      const conversation = await persistConversation(sessionId, plainMessages);
-      if (conversation) await qualifyAndSync(conversation.id, plainMessages);
+      // Persisting the conversation and qualifying the lead happens after
+      // the response has been sent — on Vercel, the serverless function can
+      // freeze as soon as the stream closes, so this must run inside
+      // `after()` (backed by Vercel's `waitUntil`) or it can get silently
+      // cut off mid-write.
+      after(async () => {
+        const conversation = await persistConversation(sessionId, plainMessages);
+        if (conversation) await qualifyAndSync(conversation.id, plainMessages);
+      });
     },
   });
 
